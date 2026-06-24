@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: telegram-link-button-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_USERNAME
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: CHANNEL_ID
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: PORT
+        value: 8080
