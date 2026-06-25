@@ -88,9 +88,12 @@ async def cmd_listadmin(u, c): pass
 async def handle_file(u, c): pass
 
 # ── Main ──────────────────────────────────────────────────────────────────
-def main():
+# ── Main ──────────────────────────────────────────────────────────────────
+# main ကို async အနေနဲ့ ပြင်ရေးထားပါတယ်
+async def main():
     app = Application.builder().token(TOKEN).build()
 
+    # Handlers များ (ယခင်အတိုင်း)
     conv = ConversationHandler(
         entry_points=[CommandHandler("post", cmd_post)],
         states={
@@ -121,7 +124,10 @@ def main():
     ))
 
     logger.info("Bot စတင်ပါပြီ (Flask ဖြုတ်ထားသည်)...")
-    app.run_polling(drop_pending_updates=True)
+    
+    # run_polling ကို await လုပ်ရပါမယ်
+    await app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    main()
+    # ဒီနေရာမှာ asyncio.run() နဲ့ ခေါ်မှသာ event loop စတင်မှာပါ
+    asyncio.run(main())
