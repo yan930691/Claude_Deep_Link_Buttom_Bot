@@ -70,27 +70,22 @@ async def cmd_done(u: Update, c: ContextTypes.DEFAULT_TYPE): return Conversation
 async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE): return ConversationHandler.END
 
 # ── Main ──────────────────────────────────────────────────────────────────
-async def main():
+# ── Main ──────────────────────────────────────────────────────────────────
+def main():
     app = Application.builder().token(TOKEN).build()
 
-    conv = ConversationHandler(
-        entry_points=[CommandHandler("post", cmd_post)],
-        states={
-            WAIT_CAPTION: [MessageHandler(filters.ALL & ~filters.COMMAND, recv_caption)],
-            WAIT_CONFIRM_A: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_confirm_a)],
-            WAIT_LINKS: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_links), CommandHandler("done", cmd_done)],
-        },
-        fallbacks=[CommandHandler("cancel", cmd_cancel)],
-        allow_reentry=True,
-    )
-
+    # (သင့်ရဲ့ handlers အားလုံးကို ဒီမှာ ထည့်ပါ)
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(conv)
+    
+    # Flask အတွက် Thread တစ်ခုကို စတင်ခြင်း
+    threading.Thread(target=run_flask, daemon=True).start()
 
     logger.info("Bot စတင်ပါပြီ...")
-    # Render အတွက် အရေးကြီး: close_loop=False ကို သုံးပေးခြင်း
-    await app.run_polling(drop_pending_updates=True, close_loop=False)
+    
+    # run_polling ကို asyncio.run() အပြင်ဘက်မှာ ခေါ်ပါ
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
