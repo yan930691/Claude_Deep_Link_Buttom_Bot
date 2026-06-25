@@ -7,8 +7,7 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     ContextTypes, filters, ConversationHandler
 )
-from pymongo import MongoClient, DESCENDING
-import asyncio
+from pymongo import MongoClient
 
 # ── Logging ───────────────────────────────────────────────────────────────
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -21,13 +20,14 @@ MONGO_URI    = os.environ.get("MONGO_URI", "")
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "")
 
 # ── MongoDB ───────────────────────────────────────────────────────────────
-client  = MongoClient(MONGO_URI)
-db      = client["tgbot"]
+client      = MongoClient(MONGO_URI)
+db          = client["tgbot"]
 col_admins  = db["admins"]
 col_posts   = db["posts"]
 col_links   = db["links"]
 col_files   = db["files"]
 
+# ── Admin check ───────────────────────────────────────────────────────────
 def get_admin_ids() -> list[int]:
     return [doc["user_id"] for doc in col_admins.find({}, {"user_id": 1})]
 
@@ -64,22 +64,19 @@ def build_keyboard(buttons: list) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 # ── Command Functions ─────────────────────────────────────────────────────
-async def cmd_help(u, c): await u.message.reply_text("အသုံးပြုနည်းအပြည့်အစုံ...")
+async def cmd_start(u, c): await u.message.reply_text("Bot စတင်ပြီ။")
+async def cmd_help(u, c): await u.message.reply_text("အသုံးပြုနည်း...")
 async def cmd_post(u, c): 
     uid = u.effective_user.id
     if not is_admin(uid): return
     sessions[uid] = {"caption": "", "caption_type": "text", "file_id": None, "buttons": []}
-    await u.message.reply_text("Caption ပို့ပါ:")
+    await u.message.reply_text("Caption ပို့ပေးပါ:")
     return WAIT_CAPTION
 
-async def recv_caption(u, c): 
-    # ... (သင်ပေးထားတဲ့ logic အတိုင်း) ...
-    return WAIT_CONFIRM_A
-
+async def recv_caption(u, c): return WAIT_CONFIRM_A
 async def recv_confirm_a(u, c): return WAIT_LINKS
 async def recv_links(u, c): return WAIT_LINKS
 async def cmd_done(u, c): return ConversationHandler.END
-async def _send_preview(bot, cid, sess, kb): pass 
 async def cmd_preview(u, c): pass
 async def cmd_send(u, c): pass
 async def cmd_cancel(u, c): return ConversationHandler.END
@@ -89,10 +86,9 @@ async def cmd_addadmin(u, c): pass
 async def cmd_deladmin(u, c): pass
 async def cmd_listadmin(u, c): pass
 async def handle_file(u, c): pass
-async def cmd_start(u, c): pass
 
 # ── Main ──────────────────────────────────────────────────────────────────
-async def main():
+def main():
     app = Application.builder().token(TOKEN).build()
 
     conv = ConversationHandler(
@@ -108,41 +104,24 @@ async def main():
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("preview", cmd_preview))
+    app.add_handler(CommandHandler("send", cmd_send))
+    app.add_handler(CommandHandler("cancel", cmd_cancel))
+    app.add_handler(CommandHandler("history", cmd_history))
+    app.add_handler(CommandHandler("stats", cmd_stats))
+    app.add_handler(CommandHandler("addadmin", cmd_addadmin))
+    app.add_handler(CommandHandler("deladmin", cmd_deladmin))
+    app.add_handler(CommandHandler("listadmin", cmd_listadmin))
     app.add_handler(conv)
-    # ... (ကျန်တဲ့ handlers များ) ...
+    
+    app.add_handler(MessageHandler(
+        filters.Document.ALL | filters.VIDEO | filters.AUDIO | 
+        filters.PHOTO | filters.VOICE | filters.VIDEO_NOTE, 
+        handle_file
+    ))
 
-    logger.info("Bot စတင်ပြီ...")
-    await app.run_polling()
-
-# ── အောက်ဆုံးမှာ ဒီအတိုင်း ပြင်ရေးပါ ───────────────────────────────────────
+    logger.info("Bot စတင်ပါပြီ (Flask ဖြုတ်ထားသည်)...")
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    # main function ကို ခေါ်မယ့်အစား application ကို တိုက်ရိုက် run ပါ
-    # main function ထဲက logic တွေကို ဒီနေရာမှာ တိုက်ရိုက်ရေးတာ ပိုကောင်းပါတယ်
-    
-    app = Application.builder().token(TOKEN).build()
-    
-    # [ဒီနေရာမှာ Handlers အားလုံးကို ထည့်ပါ - အရင်အတိုင်းပဲ]
-    conv = ConversationHandler(
-        entry_points=[CommandHandler("post", cmd_post)],
-        states={
-            WAIT_CAPTION: [MessageHandler(filters.ALL & ~filters.COMMAND, recv_caption)],
-            WAIT_CONFIRM_A: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_confirm_a)],
-            WAIT_LINKS: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_links),
-                CommandHandler("done", cmd_done),
-            ],
-        },
-        fallbacks=[CommandHandler("cancel", cmd_cancel)],
-        allow_reentry=True,
-    )
-    
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(conv)
-    # ... (ကျန်တဲ့ handlers များအားလုံးကို ဒီမှာ ဆက်ထည့်ပါ) ...
-
-    logger.info("Bot စတင်ပါပြီ...")
-    
-    # asyncio.run() သုံးစရာမလိုတော့ဘဲ တိုက်ရိုက် run ပါ
-    app.run_polling(drop_pending_updates=True)
+    main()
