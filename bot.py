@@ -69,26 +69,19 @@ async def cmd_done(u, c): return ConversationHandler.END
 async def cmd_cancel(u, c): return ConversationHandler.END
 
 # ── Main ──────────────────────────────────────────────────────────────────
-async def main():
-    app = Application.builder().token(TOKEN).build()
+# ── Main ──────────────────────────────────────────────────────────────────
+    async def main():
+        app = Application.builder().token(TOKEN).build()
+        
+        # ... (handlers များ အားလုံးကို ဒီမှာ ထည့်ထားပါ) ...
+        # (conv, handlers အားလုံးကို ဒီမှာပဲ ထည့်ပါ)
 
-    conv = ConversationHandler(
-        entry_points=[CommandHandler("post", cmd_post)],
-        states={
-            WAIT_CAPTION: [MessageHandler(filters.ALL & ~filters.COMMAND, recv_caption)],
-            WAIT_CONFIRM_A: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_confirm_a)],
-            WAIT_LINKS: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_links), CommandHandler("done", cmd_done)],
-        },
-        fallbacks=[CommandHandler("cancel", cmd_cancel)],
-        allow_reentry=True,
-    )
+        logger.info("Bot စတင်ပါပြီ...")
+        
+        # ဒီနေရာကို ဒီလို ပြင်လိုက်ပါ
+        await app.run_polling(drop_pending_updates=True, close_loop=False)
 
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(conv)
-
-    logger.info("Bot စတင်ပါပြီ...")
-    await app.run_polling(drop_pending_updates=True)
-
+    if __name__ == "__main__":
+        asyncio.run(main())
 if __name__ == "__main__":
     asyncio.run(main())
