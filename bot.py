@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+import asyncio # <--- ဒါလေး ထည့်ဖို့ မမေ့ပါနဲ့
 from datetime import datetime, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -48,20 +49,8 @@ def parse_links(text: str) -> list[dict]:
         url_match = DEEPLINK_RE.search(line)
         if not url_match: continue
         url = url_match.group(0)
-        after = line[url_match.end():].strip()
-        name_token = re.split(r"\s+", after)[0] if after else ""
-        if name_token:
-            base  = re.sub(r"\.(mp4|mkv|avi|mov|flv|wmv)$", "", name_token, flags=re.I)
-            parts = [p for p in base.split(".") if p][:4]
-            label = ".".join(parts) if parts else base
-        else:
-            label = url
-        results.append({"label": label, "url": url, "created_at": datetime.now(timezone.utc)})
+        results.append({"label": url, "url": url, "created_at": datetime.now(timezone.utc)})
     return results
-
-def build_keyboard(buttons: list) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(f"📥 {b['label']} ရယူရန်", url=b['url'])] for b in buttons]
-    return InlineKeyboardMarkup(rows)
 
 # ── Command Functions ─────────────────────────────────────────────────────
 async def cmd_start(u, c): await u.message.reply_text("Bot စတင်ပြီ။")
@@ -77,23 +66,12 @@ async def recv_caption(u, c): return WAIT_CONFIRM_A
 async def recv_confirm_a(u, c): return WAIT_LINKS
 async def recv_links(u, c): return WAIT_LINKS
 async def cmd_done(u, c): return ConversationHandler.END
-async def cmd_preview(u, c): pass
-async def cmd_send(u, c): pass
 async def cmd_cancel(u, c): return ConversationHandler.END
-async def cmd_history(u, c): pass
-async def cmd_stats(u, c): pass
-async def cmd_addadmin(u, c): pass
-async def cmd_deladmin(u, c): pass
-async def cmd_listadmin(u, c): pass
-async def handle_file(u, c): pass
 
 # ── Main ──────────────────────────────────────────────────────────────────
-# ── Main ──────────────────────────────────────────────────────────────────
-# main ကို async အနေနဲ့ ပြင်ရေးထားပါတယ်
 async def main():
     app = Application.builder().token(TOKEN).build()
 
-    # Handlers များ (ယခင်အတိုင်း)
     conv = ConversationHandler(
         entry_points=[CommandHandler("post", cmd_post)],
         states={
@@ -107,27 +85,10 @@ async def main():
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(CommandHandler("preview", cmd_preview))
-    app.add_handler(CommandHandler("send", cmd_send))
-    app.add_handler(CommandHandler("cancel", cmd_cancel))
-    app.add_handler(CommandHandler("history", cmd_history))
-    app.add_handler(CommandHandler("stats", cmd_stats))
-    app.add_handler(CommandHandler("addadmin", cmd_addadmin))
-    app.add_handler(CommandHandler("deladmin", cmd_deladmin))
-    app.add_handler(CommandHandler("listadmin", cmd_listadmin))
     app.add_handler(conv)
-    
-    app.add_handler(MessageHandler(
-        filters.Document.ALL | filters.VIDEO | filters.AUDIO | 
-        filters.PHOTO | filters.VOICE | filters.VIDEO_NOTE, 
-        handle_file
-    ))
 
-    logger.info("Bot စတင်ပါပြီ (Flask ဖြုတ်ထားသည်)...")
-    
-    # run_polling ကို await လုပ်ရပါမယ်
+    logger.info("Bot စတင်ပါပြီ...")
     await app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    # ဒီနေရာမှာ asyncio.run() နဲ့ ခေါ်မှသာ event loop စတင်မှာပါ
     asyncio.run(main())
