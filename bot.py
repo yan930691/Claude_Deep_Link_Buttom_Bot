@@ -1,7 +1,7 @@
 import os
 import re
 import logging
-import asyncio # <--- ဒါလေး ထည့်ဖို့ မမေ့ပါနဲ့
+import asyncio
 from datetime import datetime, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -53,35 +53,44 @@ def parse_links(text: str) -> list[dict]:
     return results
 
 # ── Command Functions ─────────────────────────────────────────────────────
-async def cmd_start(u, c): await u.message.reply_text("Bot စတင်ပြီ။")
-async def cmd_help(u, c): await u.message.reply_text("အသုံးပြုနည်း...")
-async def cmd_post(u, c): 
+async def cmd_start(u: Update, c: ContextTypes.DEFAULT_TYPE): await u.message.reply_text("Bot စတင်ပြီ။")
+async def cmd_help(u: Update, c: ContextTypes.DEFAULT_TYPE): await u.message.reply_text("အသုံးပြုနည်း...")
+
+async def cmd_post(u: Update, c: ContextTypes.DEFAULT_TYPE): 
     uid = u.effective_user.id
     if not is_admin(uid): return
     sessions[uid] = {"caption": "", "caption_type": "text", "file_id": None, "buttons": []}
     await u.message.reply_text("Caption ပို့ပေးပါ:")
     return WAIT_CAPTION
 
-async def recv_caption(u, c): return WAIT_CONFIRM_A
-async def recv_confirm_a(u, c): return WAIT_LINKS
-async def recv_links(u, c): return WAIT_LINKS
-async def cmd_done(u, c): return ConversationHandler.END
-async def cmd_cancel(u, c): return ConversationHandler.END
+async def recv_caption(u: Update, c: ContextTypes.DEFAULT_TYPE): return WAIT_CONFIRM_A
+async def recv_confirm_a(u: Update, c: ContextTypes.DEFAULT_TYPE): return WAIT_LINKS
+async def recv_links(u: Update, c: ContextTypes.DEFAULT_TYPE): return WAIT_LINKS
+async def cmd_done(u: Update, c: ContextTypes.DEFAULT_TYPE): return ConversationHandler.END
+async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE): return ConversationHandler.END
 
 # ── Main ──────────────────────────────────────────────────────────────────
-# ── Main ──────────────────────────────────────────────────────────────────
-    async def main():
-        app = Application.builder().token(TOKEN).build()
-        
-        # ... (handlers များ အားလုံးကို ဒီမှာ ထည့်ထားပါ) ...
-        # (conv, handlers အားလုံးကို ဒီမှာပဲ ထည့်ပါ)
+async def main():
+    app = Application.builder().token(TOKEN).build()
 
-        logger.info("Bot စတင်ပါပြီ...")
-        
-        # ဒီနေရာကို ဒီလို ပြင်လိုက်ပါ
-        await app.run_polling(drop_pending_updates=True, close_loop=False)
+    conv = ConversationHandler(
+        entry_points=[CommandHandler("post", cmd_post)],
+        states={
+            WAIT_CAPTION: [MessageHandler(filters.ALL & ~filters.COMMAND, recv_caption)],
+            WAIT_CONFIRM_A: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_confirm_a)],
+            WAIT_LINKS: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_links), CommandHandler("done", cmd_done)],
+        },
+        fallbacks=[CommandHandler("cancel", cmd_cancel)],
+        allow_reentry=True,
+    )
 
-    if __name__ == "__main__":
-        asyncio.run(main())
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(conv)
+
+    logger.info("Bot စတင်ပါပြီ...")
+    # Render အတွက် အရေးကြီး: close_loop=False ကို သုံးပေးခြင်း
+    await app.run_polling(drop_pending_updates=True, close_loop=False)
+
 if __name__ == "__main__":
     asyncio.run(main())
