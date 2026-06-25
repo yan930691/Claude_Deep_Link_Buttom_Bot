@@ -9,11 +9,13 @@ from telegram.ext import (
     ConversationHandler, filters
 )
 from handlers import (
-    start, help_command, new_buttons, receive_buttons, view_buttons,
-    delete_buttons, confirm_delete, settings, language_menu,
-    language_callback, cancel, callback_handler, reset_script,
-    process_user_message, handle_file, deep_link_handler,
-    done_command, WAITING_FOR_BUTTONS, WAITING_FOR_PHOTO
+    start, help_command, post_command, post_receive_photo, post_receive_caption,
+    post_receive_links, view_buttons, delete_buttons, confirm_delete,
+    settings, language_menu, language_callback, cancel, callback_handler,
+    reset_script, process_user_message, handle_file, deep_link_handler,
+    done_command, new_buttons, receive_buttons,
+    WAITING_FOR_BUTTONS, WAITING_FOR_PHOTO,
+    POST_WAITING_PHOTO, POST_WAITING_CAPTION, POST_WAITING_CONFIRM, POST_WAITING_LINKS
 )
 
 logging.basicConfig(
@@ -39,19 +41,25 @@ def run_flask():
 async def run_bot():
     application = Application.builder().token(BOT_TOKEN).build()
 
-    conv_handler = ConversationHandler(
+    # /post conversation flow
+    post_handler = ConversationHandler(
         entry_points=[
-            CommandHandler("new", new_buttons),
+            CommandHandler("post", post_command),
         ],
         states={
-            WAITING_FOR_BUTTONS: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_buttons),
-                CommandHandler("done", receive_buttons),
-                CommandHandler("cancel", cancel),
+            POST_WAITING_PHOTO: [
+                MessageHandler(filters.PHOTO, post_receive_photo),
             ],
-            WAITING_FOR_PHOTO: [
-                MessageHandler(filters.PHOTO, handle_file),
-                CommandHandler("cancel", cancel),
+            POST_WAITING_CAPTION: [
+                CommandHandler("captdone", post_receive_caption),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, post_receive_caption),
+            ],
+            POST_WAITING_CONFIRM: [
+                CallbackQueryHandler(callback_handler, pattern="^post_confirm_caption$"),
+            ],
+            POST_WAITING_LINKS: [
+                CommandHandler("done", post_receive_links),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, post_receive_links),
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
@@ -62,18 +70,14 @@ async def run_bot():
     application.add_handler(CommandHandler("view", view_buttons))
     application.add_handler(CommandHandler("delete", delete_buttons))
     application.add_handler(CommandHandler("settings", settings))
-    application.add_handler(CommandHandler("language", language_menu))
     application.add_handler(CommandHandler("reset", reset_script))
-    application.add_handler(CommandHandler("done", done_command))
-    application.add_handler(conv_handler)
+    application.add_handler(CommandHandler("cancel", cancel))
+    application.add_handler(post_handler)
 
     application.add_handler(CallbackQueryHandler(language_callback, pattern="^lang_"))
     application.add_handler(CallbackQueryHandler(callback_handler))
 
-    # Deep link message တွေ ခံမယ်
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_user_message))
-
-    # Photo ခံမယ် (conversation အပြင်မှာလည်း)
     application.add_handler(MessageHandler(
         filters.PHOTO | filters.Document.ALL | filters.VIDEO | filters.AUDIO,
         handle_file
