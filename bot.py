@@ -36,11 +36,16 @@ def index(): return "Bot is running"
 def run_flask():
     app_flask.run(host="0.0.0.0", port=PORT)
 
-# ── Handlers ──────────────────────────────────────────────────────────────
+# ── Handlers & States ─────────────────────────────────────────────────────
 WAIT_CAPTION, WAIT_CONFIRM_A, WAIT_LINKS = range(3)
 
 async def cmd_start(u: Update, c: ContextTypes.DEFAULT_TYPE): await u.message.reply_text("Bot စတင်ပြီ။")
-async def cmd_post(u: Update, c: ContextTypes.DEFAULT_TYPE): await u.message.reply_text("Caption ပို့ပေးပါ:")
+async def cmd_help(u: Update, c: ContextTypes.DEFAULT_TYPE): await u.message.reply_text("အသုံးပြုနည်း...")
+async def cmd_post(u: Update, c: ContextTypes.DEFAULT_TYPE): 
+    if not is_admin(u.effective_user.id): return
+    await u.message.reply_text("Caption ပို့ပေးပါ:")
+    return WAIT_CAPTION
+
 async def recv_caption(u, c): return WAIT_CONFIRM_A
 async def recv_confirm_a(u, c): return WAIT_LINKS
 async def recv_links(u, c): return WAIT_LINKS
@@ -64,6 +69,7 @@ async def main():
     )
 
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(conv)
 
     # Flask ကို Background မှာ run ခြင်း
@@ -71,9 +77,11 @@ async def main():
 
     logger.info("Bot စတင်ပါပြီ...")
     
-    # အရေးကြီးဆုံး: run_polling ကို await လုပ်ပေးခြင်း
-    await app.run_polling(drop_pending_updates=True)
+    # Render ပတ်ဝန်းကျင်အတွက် loop ကို မပိတ်စေရန် close_loop=False ကို သုံးထားသည်
+    await app.run_polling(drop_pending_updates=True, close_loop=False)
 
 if __name__ == "__main__":
-    # Event loop စတင်ခြင်း
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
