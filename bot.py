@@ -13,7 +13,7 @@ from handlers import (
     delete_buttons, confirm_delete, settings, language_menu,
     language_callback, cancel, callback_handler, reset_script,
     process_user_message, handle_file, deep_link_handler,
-    WAITING_FOR_BUTTONS
+    done_command, WAITING_FOR_BUTTONS, WAITING_FOR_PHOTO
 )
 
 logging.basicConfig(
@@ -26,7 +26,6 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN မသတ်မှတ်ရသေးပါ!")
 
-# Flask app — Render ရဲ့ port scan အတွက်
 flask_app = Flask(__name__)
 
 @flask_app.route("/")
@@ -43,12 +42,15 @@ async def run_bot():
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("new", new_buttons),
-            CallbackQueryHandler(callback_handler, pattern="^new$"),
         ],
         states={
             WAITING_FOR_BUTTONS: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_buttons),
                 CommandHandler("done", receive_buttons),
+                CommandHandler("cancel", cancel),
+            ],
+            WAITING_FOR_PHOTO: [
+                MessageHandler(filters.PHOTO, handle_file),
                 CommandHandler("cancel", cancel),
             ],
         },
@@ -59,18 +61,21 @@ async def run_bot():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("view", view_buttons))
     application.add_handler(CommandHandler("delete", delete_buttons))
-    application.add_handler(CommandHandler("confirm_delete", confirm_delete))
     application.add_handler(CommandHandler("settings", settings))
     application.add_handler(CommandHandler("language", language_menu))
     application.add_handler(CommandHandler("reset", reset_script))
+    application.add_handler(CommandHandler("done", done_command))
     application.add_handler(conv_handler)
 
     application.add_handler(CallbackQueryHandler(language_callback, pattern="^lang_"))
     application.add_handler(CallbackQueryHandler(callback_handler))
 
+    # Deep link message တွေ ခံမယ်
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_user_message))
+
+    # Photo ခံမယ် (conversation အပြင်မှာလည်း)
     application.add_handler(MessageHandler(
-        filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.PHOTO,
+        filters.PHOTO | filters.Document.ALL | filters.VIDEO | filters.AUDIO,
         handle_file
     ))
 
@@ -82,9 +87,6 @@ async def run_bot():
         await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    # Flask ကို thread တစ်ခုမှာ run
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
-
-    # Bot ကို main thread မှာ run
     asyncio.run(run_bot())
