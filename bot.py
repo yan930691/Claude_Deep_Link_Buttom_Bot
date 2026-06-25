@@ -114,5 +114,35 @@ async def main():
     logger.info("Bot စတင်ပြီ...")
     await app.run_polling()
 
+# ── အောက်ဆုံးမှာ ဒီအတိုင်း ပြင်ရေးပါ ───────────────────────────────────────
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    # main function ကို ခေါ်မယ့်အစား application ကို တိုက်ရိုက် run ပါ
+    # main function ထဲက logic တွေကို ဒီနေရာမှာ တိုက်ရိုက်ရေးတာ ပိုကောင်းပါတယ်
+    
+    app = Application.builder().token(TOKEN).build()
+    
+    # [ဒီနေရာမှာ Handlers အားလုံးကို ထည့်ပါ - အရင်အတိုင်းပဲ]
+    conv = ConversationHandler(
+        entry_points=[CommandHandler("post", cmd_post)],
+        states={
+            WAIT_CAPTION: [MessageHandler(filters.ALL & ~filters.COMMAND, recv_caption)],
+            WAIT_CONFIRM_A: [MessageHandler(filters.TEXT & ~filters.COMMAND, recv_confirm_a)],
+            WAIT_LINKS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recv_links),
+                CommandHandler("done", cmd_done),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cmd_cancel)],
+        allow_reentry=True,
+    )
+    
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(conv)
+    # ... (ကျန်တဲ့ handlers များအားလုံးကို ဒီမှာ ဆက်ထည့်ပါ) ...
+
+    logger.info("Bot စတင်ပါပြီ...")
+    
+    # asyncio.run() သုံးစရာမလိုတော့ဘဲ တိုက်ရိုက် run ပါ
+    app.run_polling(drop_pending_updates=True)
