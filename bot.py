@@ -1,12 +1,11 @@
-# bot.py
 import logging
+import os
 import asyncio
 from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ConversationHandler, filters
 )
-from config import BOT_TOKEN
 from handlers import (
     start, help_command, new_buttons, receive_buttons, view_buttons,
     delete_buttons, confirm_delete, settings, language_menu,
@@ -20,6 +19,11 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# config.py အစား environment variable ကနေ ဖတ်တယ်
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN environment variable မသတ်မှတ်ရသေးပါ!")
 
 def main():
     """Bot ကိုစတင်မောင်းနှင်ရန်"""
@@ -41,8 +45,11 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
-    # Command Handlers
+    # /start — deep_link_handler ကို start handler ထဲ ပေါင်းထည့်ထားတယ်
+    # (နှစ်ခါ register လုပ်လို့မရ၊ start handler ထဲမှာ deep link check လုပ်ပါ)
     application.add_handler(CommandHandler("start", start))
+
+    # Command Handlers
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("view", view_buttons))
     application.add_handler(CommandHandler("delete", delete_buttons))
@@ -52,12 +59,9 @@ def main():
     application.add_handler(CommandHandler("reset", reset_script))
     application.add_handler(conv_handler)
 
-    # Deep Link Handler
-    application.add_handler(CommandHandler("start", deep_link_handler))
-
-    # Callback Query Handlers
-    application.add_handler(CallbackQueryHandler(callback_handler))
+    # Callback Query Handlers (specific pattern ကို အရင်ထည့်)
     application.add_handler(CallbackQueryHandler(language_callback, pattern="^lang_"))
+    application.add_handler(CallbackQueryHandler(callback_handler))
 
     # Main Message Handler
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_user_message))
