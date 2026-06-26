@@ -45,9 +45,10 @@ async def run_bot():
     # /post conversation flow
     post_handler = ConversationHandler(
         entry_points=[
-            CommandHandler("post", post_command),
-            CommandHandler("new", post_command),
-        ],
+    CommandHandler("post", post_command),
+    CommandHandler("new", post_command),
+    CallbackQueryHandler(post_command, pattern="^menu_post$"),  # ဒါထည့်
+],
         states={
             POST_WAITING_PHOTO: [
                 MessageHandler(filters.PHOTO, post_receive_photo),
