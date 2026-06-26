@@ -14,13 +14,14 @@ POST_WAITING_CAPTION = 11
 POST_WAITING_CONFIRM = 12
 POST_WAITING_LINKS = 13
 
-ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
-
-# Session: {user_id: {photo, caption, links: []}}
-session = {}
+ADMIN_IDS = set()
+for _id in os.environ.get("ADMIN_ID", "").split(","):
+    _id = _id.strip()
+    if _id.isdigit():
+        ADMIN_IDS.add(int(_id))
 
 def is_admin(user_id):
-    return user_id == ADMIN_ID
+    return user_id in ADMIN_IDS
 
 def parse_deep_link(text):
     url_match = re.search(r'(https://t\.me/\S+)', text)
