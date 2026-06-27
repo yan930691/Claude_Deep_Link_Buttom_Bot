@@ -40,7 +40,21 @@ def make_short_id(file_id):
 def make_deep_link(short_id):
     return f"https://t.me/{BOT_USERNAME}?start={short_id}"
 
-def clean_filename(name):
+def get_movie_name(name):
+    """Full movie/series name ထုတ် (caption အတွက်)"""
+    name = re.sub(r'\.(mkv|mp4|avi|mov|wmv|flv|zip|rar)$', '', name, flags=re.IGNORECASE)
+    # Series ဆိုရင် title + season + episode
+    ep_match = re.search(r'^(.+?)(S\d+\s*EP?\s*\d+)', name, re.IGNORECASE)
+    if ep_match:
+        title = ep_match.group(1).replace('.', ' ').strip()
+        ep = ep_match.group(2).upper().replace(' ', '')
+        return f"{title} {ep}"
+    # Movie ဆိုရင် title + ခုနှစ်
+    name = re.sub(r'\.(NF|WEB|WEBRip|WEB-DL|BluRay|HDTV|DVDRip|AMZN|DSNP|HULU|1080p|720p|480p|INTERNAL|REPACK|PROPER).*$', '', name, flags=re.IGNORECASE)
+    year_match = re.search(r'^(.+?\d{4})', name)
+    if year_match:
+        return year_match.group(1).replace('.', ' ').strip()
+    return name.replace('.', ' ').strip()
     name = re.sub(r'\.(mkv|mp4|avi|mov|wmv|flv|zip|rar)$', '', name, flags=re.IGNORECASE)
     # Series — S01EP19 → "S1 EP19 ရယူရန်"
     ep_match = re.search(r'S(\d+)\s*EP?(\d+)', name, re.IGNORECASE)
@@ -317,7 +331,8 @@ async def post_receive_files(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         short_id = make_short_id(file_id)
         button_name = clean_filename(file_name)
-        file_store[short_id] = {"file_id": file_id, "file_type": file_type, "name": button_name}
+        full_name = get_movie_name(file_name)
+        file_store[short_id] = {"file_id": file_id, "file_type": file_type, "name": full_name}
         deep_link = make_deep_link(short_id)
 
         # အလိုအလျောက် session ထဲ ထည့်
@@ -366,7 +381,8 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     short_id = make_short_id(file_id)
     button_name = clean_filename(file_name)
-    file_store[short_id] = {"file_id": file_id, "file_type": file_type, "name": button_name}
+    full_name = get_movie_name(file_name)
+    file_store[short_id] = {"file_id": file_id, "file_type": file_type, "name": full_name}
     deep_link = make_deep_link(short_id)
 
     if user_id not in pending_files:
