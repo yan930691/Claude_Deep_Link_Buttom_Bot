@@ -9,14 +9,14 @@ from telegram.ext import (
     ConversationHandler, filters
 )
 from handlers import (
-    start, help_command, post_command, post_receive_photo,
-    post_receive_caption, post_receive_links, view_buttons,
-    delete_buttons, cancel, callback_handler, reset_script,
+    start, help_command, post_command, post_receive_photo, post_receive_caption,
+    post_confirm_and_wait_files, post_receive_files,
+    view_buttons, delete_buttons, cancel, callback_handler, reset_script,
     process_user_message, handle_file, deep_link_handler,
     confirm_delete, settings, language_menu, language_callback,
     new_buttons, receive_buttons, done_command,
     POST_WAITING_PHOTO, POST_WAITING_CAPTION,
-    POST_WAITING_CONFIRM, POST_WAITING_LINKS,
+    POST_WAITING_CONFIRM, POST_WAITING_FILES,
     WAITING_FOR_BUTTONS, WAITING_FOR_PHOTO
 )
 
@@ -57,18 +57,22 @@ async def run_bot():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, post_receive_caption),
             ],
             POST_WAITING_CONFIRM: [
-                CallbackQueryHandler(post_receive_links, pattern="^post_confirm_caption$"),
+                CallbackQueryHandler(post_confirm_and_wait_files, pattern="^post_confirm_caption$"),
             ],
-            POST_WAITING_LINKS: [
-                CommandHandler("done", post_receive_links),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, post_receive_links),
+            POST_WAITING_FILES: [
+                CommandHandler("done", post_receive_files),
+                MessageHandler(
+                    filters.Document.ALL | filters.VIDEO | filters.AUDIO,
+                    post_receive_files
+                ),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, post_receive_files),
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         allow_reentry=True,
     )
 
-    # ဖိုင် handler ကို အရင်ဆုံး (conversation ပြင်မှာ အမြဲ အလုပ်လုပ်အောင်)
+    # File handler အရင် (conversation ပြင်မှာ deep link ထုတ်ဖို့)
     application.add_handler(MessageHandler(
         filters.Document.ALL | filters.VIDEO | filters.AUDIO,
         handle_file
