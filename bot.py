@@ -72,13 +72,9 @@ async def run_bot():
         allow_reentry=True,
     )
 
-    # File handler အရင် (conversation ပြင်မှာ deep link ထုတ်ဖို့)
-    application.add_handler(MessageHandler(
-        filters.Document.ALL | filters.VIDEO | filters.AUDIO,
-        handle_file
-    ))
-
+    # Conversation handler အရင်ဆုံး register လုပ်
     application.add_handler(post_conv)
+
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("view", view_buttons))
@@ -86,6 +82,12 @@ async def run_bot():
     application.add_handler(CommandHandler("reset", reset_script))
     application.add_handler(CommandHandler("cancel", cancel))
     application.add_handler(CallbackQueryHandler(callback_handler))
+
+    # File handler ကို conversation ပြင်မှာပဲ အလုပ်လုပ်အောင် နောက်မှထည့်
+    application.add_handler(MessageHandler(
+        filters.Document.ALL | filters.VIDEO | filters.AUDIO,
+        handle_file
+    ))
     application.add_handler(MessageHandler(filters.PHOTO, handle_file))
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
