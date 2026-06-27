@@ -293,8 +293,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ *Deep Link ထွက်ပြီ!*\n\n"
         f"📁 `{file_name}`\n"
         f"🔘 Button Name: `{button_name}`\n\n"
-        f"🔗 သင်၏ Deep Link အဆင်သင့်ဖြစ်ပါပြီ။\n"
-        f"`{deep_link} {file_name}`",
+        f"🔗 သင်၏ Deep Link အဆင်သင့်ဖြစ်ပါပြီ။ {deep_link} {file_name}",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
