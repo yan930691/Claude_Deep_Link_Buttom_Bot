@@ -2,6 +2,7 @@ import os
 import re
 import logging
 import hashlib
+import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
@@ -13,7 +14,7 @@ WAITING_FOR_PHOTO = 2
 POST_WAITING_PHOTO = 10
 POST_WAITING_CAPTION = 11
 POST_WAITING_CONFIRM = 12
-POST_WAITING_LINKS = 13
+POST_WAITING_FILES = 13  # ဖိုင်တွေ ပို့တဲ့ state
 
 # ENV
 ADMIN_IDS = set()
@@ -23,6 +24,7 @@ for _id in os.environ.get("ADMIN_ID", "").split(","):
         ADMIN_IDS.add(int(_id))
 
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "").strip().lstrip("@")
+TELEGRAPH_TOKEN = os.environ.get("TELEGRAPH_TOKEN", "")
 
 # Storage
 session = {}       # {user_id: {photo, caption, links[]}}
@@ -39,34 +41,19 @@ def make_deep_link(short_id):
     return f"https://t.me/{BOT_USERNAME}?start={short_id}"
 
 def clean_filename(name):
-    # Extension ဖြုတ်
     name = re.sub(r'\.(mkv|mp4|avi|mov|wmv|flv|zip|rar)$', '', name, flags=re.IGNORECASE)
-
-    # Series ဆိုရင် S01EP01 အထိ ယူ
     ep_match = re.search(r'^(.+?)(S\d+\s*EP?\s*\d+)', name, re.IGNORECASE)
     if ep_match:
         title = ep_match.group(1).replace('.', ' ').strip()
         episode = ep_match.group(2).upper().replace(' ', '')
         return f"{title} {episode} ရယူရန်"
-
-    # Movie ဆိုရင် quality tag တွေဖြုတ်ပြီး ရှေ့ title ပဲယူ
     name = re.sub(r'\.(NF|WEB|WEBRip|WEB-DL|BluRay|HDTV|DVDRip|AMZN|DSNP|HULU|1080p|720p|480p|INTERNAL|REPACK|PROPER).*$', '', name, flags=re.IGNORECASE)
-    # ခုနှစ် (2024) အပါ ယူ
     year_match = re.search(r'^(.+?\d{4})', name)
     if year_match:
         title = year_match.group(1).replace('.', ' ').strip()
     else:
         title = name.replace('.', ' ').strip()
     return f"{title} ရယူရန်"
-
-def parse_deep_link_msg(text):
-    url_match = re.search(r'(https://t\.me/\S+)', text)
-    if not url_match:
-        return None
-    url = url_match.group(1)
-    after_url = text[url_match.end():].strip()
-    name = clean_filename(after_url) if after_url else "File"
-    return {"name": name, "url": url}
 
 def sort_links(links):
     def sort_key(link):
@@ -80,7 +67,7 @@ def sort_links(links):
         return (999, name)
     return sorted(links, key=sort_key)
 
-def build_keyboard(links):
+def build_keyboard(links, extra_buttons=None):
     sorted_links = sort_links(links)
     keyboard = []
     row = []
@@ -91,10 +78,35 @@ def build_keyboard(links):
             row = []
     if row:
         keyboard.append(row)
+    if extra_buttons:
+        for btn in extra_buttons:
+            keyboard.append([btn])
     return keyboard
 
 def init_session(user_id):
     session[user_id] = {"photo": None, "caption": "", "links": []}
+
+async def create_telegraph_page(title, content):
+    """Telegraph page တည်ဆောက်"""
+    if not TELEGRAPH_TOKEN:
+        return None
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://api.telegra.ph/createPage",
+                json={
+                    "access_token": TELEGRAPH_TOKEN,
+                    "title": title,
+                    "content": [{"tag": "p", "children": [content]}],
+                    "return_content": False
+                }
+            )
+            data = resp.json()
+            if data.get("ok"):
+                return data["result"]["url"]
+    except Exception as e:
+        logger.error(f"Telegraph error: {e}")
+    return None
 
 # ==================== /start ====================
 
@@ -131,7 +143,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"File send error: {e}")
                 await update.message.reply_text("⚠️ ဖိုင် ပြန်ပို့တာ မအောင်မြင်ပါ။")
         else:
-            await update.message.reply_text("⚠️ ဖိုင် မတွေ့ပါ။ Bot restart ဖြစ်သွားလို့ ဖြစ်နိုင်တယ်။")
+            await update.message.reply_text("⚠️ ဖိုင် မတွေ့ပါ။ Bot restart ဖြစ်သွားနိုင်တယ်။")
         return
 
     if is_admin(user_id):
@@ -143,8 +155,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         await update.message.reply_text(
             "👑 *Admin Menu*\n\n"
-            "📌 ဖိုင်တိုင်း ပို့ရင် deep link အလိုအလျောက် ထုတ်ပေးမယ်\n"
-            "/post — Post တည်ဆောက်\n"
+            "📌 /post — Post တည်ဆောက်\n"
+            "📌 ဖိုင်တိုင်း ပို့ → Deep link အလိုအလျောက်ထွက်\n"
             "/help — အကူအညီ",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
@@ -170,15 +182,12 @@ async def post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     init_session(user_id)
 
+    msg = "🖼 Post အတွက် *ပုံပို့ပါ*"
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.message.reply_text(
-            "🖼 Post အတွက် *ပုံပို့ပါ*", parse_mode="Markdown"
-        )
+        await update.callback_query.message.reply_text(msg, parse_mode="Markdown")
     else:
-        await update.message.reply_text(
-            "🖼 Post အတွက် *ပုံပို့ပါ*", parse_mode="Markdown"
-        )
+        await update.message.reply_text(msg, parse_mode="Markdown")
     return POST_WAITING_PHOTO
 
 async def post_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -190,7 +199,8 @@ async def post_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return POST_WAITING_PHOTO
     session[user_id]["photo"] = update.message.photo[-1].file_id
     await update.message.reply_text(
-        "📝 *ဇာတ်ညွှန်း ပို့ပါ*\n\nကြိမ်ထပ် ပို့နိုင်တယ်။ ပြီးရင် /captdone ရိုက်ပါ။",
+        "📝 *ဇာတ်ညွှန်း ပို့ပါ*\n\n"
+        "ကြိမ်ထပ် ပို့နိုင်တယ်။ ပြီးရင် /captdone ရိုက်ပါ။",
         parse_mode="Markdown"
     )
     return POST_WAITING_CAPTION
@@ -204,8 +214,10 @@ async def post_receive_caption(update: Update, context: ContextTypes.DEFAULT_TYP
         caption = session[user_id].get("caption", "").strip()
         preview = caption if caption else "(ဇာတ်ညွှန်း မထည့်ထားပါ)"
         keyboard = [[InlineKeyboardButton("✅  a  — အတည်ပြု", callback_data="post_confirm_caption")]]
+        # Preview ကို truncate လုပ်ပြ
+        preview_show = preview[:500] + "..." if len(preview) > 500 else preview
         await update.message.reply_text(
-            f"📋 *ဇာတ်ညွှန်း Preview:*\n\n{preview}\n\n'a' နှိပ်ပြီး အတည်ပြုပါ။",
+            f"📋 *ဇာတ်ညွှန်း Preview:*\n\n{preview_show}\n\n'a' နှိပ်ပြီး အတည်ပြုပါ။",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
@@ -219,29 +231,56 @@ async def post_receive_caption(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text("✅ ထည့်ပြီး။ ဆက်ပို့နိုင်တယ် ဒါမှမဟုတ် /captdone ရိုက်ပါ။")
     return POST_WAITING_CAPTION
 
-async def post_receive_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def post_confirm_and_wait_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """'a' နှိပ်ပြီးနောက် ဖိုင်တွေ ပို့ဖို့ စောင့်"""
     if not update.effective_user:
-        return POST_WAITING_LINKS
+        return POST_WAITING_FILES
+    user_id = update.effective_user.id
+    await update.callback_query.answer()
+    await update.callback_query.message.reply_text(
+        "✅ ဇာတ်ညွှန်း အတည်ပြုပြီ။\n\n"
+        "🎬 *ဖိုင်တွေ ပို့ပါ*\n"
+        "Bot က deep link အလိုအလျောက် ထုတ်ပြီး button ထည့်ပေးမယ်။\n\n"
+        "ပြီးရင် /done ရိုက်ပါ။",
+        parse_mode="Markdown"
+    )
+    return POST_WAITING_FILES
+
+async def post_receive_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """POST_WAITING_FILES state မှာ ဖိုင်လက်ခံပြီး button ထည့်"""
+    if not update.effective_user:
+        return POST_WAITING_FILES
     user_id = update.effective_user.id
 
-    if update.callback_query:
-        await update.callback_query.answer()
-        await update.callback_query.message.reply_text(
-            "✅ ဇာတ်ညွှန်း အတည်ပြုပြီ။\n\n🔗 Deep link တွေ ပို့ပါ။ ပြီးရင် /done ရိုက်ပါ။"
-        )
-        return POST_WAITING_LINKS
-
+    # /done ဆိုရင် post ထုတ်
     if update.message and update.message.text and update.message.text.startswith("/done"):
         links = session.get(user_id, {}).get("links", [])
         if not links:
-            await update.message.reply_text("⚠️ Link တစ်ခုမှ မရှိသေးပါ။ Deep link ပို့ပါ။")
-            return POST_WAITING_LINKS
+            await update.message.reply_text("⚠️ ဖိုင် တစ်ခုမှ မပို့ရသေးပါ။")
+            return POST_WAITING_FILES
+
         photo = session[user_id]["photo"]
         caption = session[user_id]["caption"].strip()
-        keyboard = build_keyboard(links)
+
+        # Caption 1024 ထက်ကျော်ရင် Telegraph တင်
+        extra_buttons = []
+        if len(caption) > 1024:
+            # Title ထုတ် (ပထမ line)
+            title = caption.split("\n")[0][:100]
+            telegraph_url = await create_telegraph_page(title, caption)
+            caption_short = caption[:1020] + "..."
+            if telegraph_url:
+                extra_buttons.append(
+                    InlineKeyboardButton("📖 ဇာတ်ညွှန်းအပြည့်အစုံဖတ်ရန်", url=telegraph_url)
+                )
+        else:
+            caption_short = caption
+
+        keyboard = build_keyboard(links, extra_buttons=extra_buttons)
+
         await update.message.reply_photo(
             photo=photo,
-            caption=caption if caption else None,
+            caption=caption_short if caption_short else None,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         await update.message.reply_text(
@@ -250,25 +289,47 @@ async def post_receive_links(update: Update, context: ContextTypes.DEFAULT_TYPE)
         session.pop(user_id, None)
         return ConversationHandler.END
 
+    # ဖိုင် ပို့လာရင် deep link ထုတ်ပြီး button ထည့်
     if update.message:
-        text = update.message.text or ""
-        if "t.me/" in text:
-            parsed = parse_deep_link_msg(text)
-            if parsed:
-                session[user_id]["links"].append(parsed)
-                count = len(session[user_id]["links"])
-                await update.message.reply_text(
-                    f"✅ [{count}] *{parsed['name']}*\n{parsed['url']}\n\n"
-                    "ထပ်ပို့နိုင်တယ် ဒါမှမဟုတ် /done ရိုက်ပါ။",
-                    parse_mode="Markdown"
-                )
-            else:
-                await update.message.reply_text("⚠️ Deep link မတွေ့ပါ။")
-        else:
-            await update.message.reply_text("💬 Deep link ပို့ပါ ဒါမှမဟုတ် /done ရိုက်ပါ။")
-    return POST_WAITING_LINKS
+        file_id = None
+        file_name = "file"
+        file_type = "document"
 
-# ==================== FILE HANDLER ====================
+        if update.message.document:
+            file_id = update.message.document.file_id
+            file_name = update.message.document.file_name or "file"
+            file_type = "document"
+        elif update.message.video:
+            file_id = update.message.video.file_id
+            file_name = update.message.video.file_name or "video.mp4"
+            file_type = "video"
+        elif update.message.audio:
+            file_id = update.message.audio.file_id
+            file_name = update.message.audio.file_name or "audio"
+            file_type = "audio"
+        elif update.message.text:
+            await update.message.reply_text("💬 ဖိုင်ပို့ပါ ဒါမှမဟုတ် /done ရိုက်ပါ။")
+            return POST_WAITING_FILES
+        else:
+            return POST_WAITING_FILES
+
+        short_id = make_short_id(file_id)
+        button_name = clean_filename(file_name)
+        file_store[short_id] = {"file_id": file_id, "file_type": file_type, "name": button_name}
+        deep_link = make_deep_link(short_id)
+
+        session[user_id]["links"].append({"name": button_name, "url": deep_link})
+        count = len(session[user_id]["links"])
+
+        await update.message.reply_text(
+            f"✅ [{count}] *{button_name}*\n"
+            f"🔗 {deep_link}\n\n"
+            "ဖိုင်ထပ်ပို့နိုင်တယ် ဒါမှမဟုတ် /done ရိုက်ပြီး post ထုတ်ပါ။",
+            parse_mode="Markdown"
+        )
+    return POST_WAITING_FILES
+
+# ==================== FILE HANDLER (conversation ပြင်) ====================
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user:
@@ -304,7 +365,6 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     short_id = make_short_id(file_id)
     button_name = clean_filename(file_name)
     file_store[short_id] = {"file_id": file_id, "file_type": file_type, "name": button_name}
-
     deep_link = make_deep_link(short_id)
 
     if user_id not in pending_files:
@@ -317,7 +377,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"✅ *Deep Link ထွက်ပြီ!*\n\n"
         f"📁 `{file_name}`\n"
-        f"🔘 Button Name: `{button_name}`\n\n"
+        f"🔘 {button_name}\n\n"
         f"🔗 သင်၏ Deep Link အဆင်သင့်ဖြစ်ပါပြီ။ {deep_link} {file_name}",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
@@ -332,12 +392,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_admin(user_id):
         await update.message.reply_text(
             "📖 *Admin အသုံးပြုနည်း*\n\n"
-            "🔹 ဖိုင်တိုင်း ပို့ → Deep link အလိုအလျောက်ထွက်\n\n"
-            "*Post တည်ဆောက်နည်း:*\n"
+            "*Post တည်ဆောက်နည်း (နည်းလမ်း ၂):*\n"
             "1️⃣ /post → ပုံပို့\n"
             "2️⃣ ဇာတ်ညွှန်းပို့ → /captdone\n"
             "3️⃣ 'a' နှိပ် confirm\n"
-            "4️⃣ Deep link တွေပို့ → /done\n\n"
+            "4️⃣ ဖိုင်တွေ ပို့ → Bot က deep link + button အလိုအလျောက်ထည့်\n"
+            "5️⃣ /done → Post ထွက်\n\n"
+            "🔹 Conversation ပြင်မှာ ဖိုင်ပို့ → Deep link သီးသန့်ထွက်မယ်\n\n"
             "*Commands:*\n"
             "/post — Post အသစ်\n"
             "/view — Links ကြည့်\n"
@@ -399,7 +460,7 @@ async def new_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await post_command(update, context)
 
 async def receive_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await post_receive_links(update, context)
+    return await post_receive_files(update, context)
 
 async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pass
@@ -426,22 +487,7 @@ async def process_user_message(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = update.effective_user.id
     if not is_admin(user_id):
         return
-    text = update.message.text or ""
-    if "t.me/" in text:
-        parsed = parse_deep_link_msg(text)
-        if parsed:
-            if user_id not in session:
-                init_session(user_id)
-            session[user_id]["links"].append(parsed)
-            count = len(session[user_id]["links"])
-            await update.message.reply_text(
-                f"✅ [{count}] *{parsed['name']}*\n{parsed['url']}",
-                parse_mode="Markdown"
-            )
-        else:
-            await update.message.reply_text("⚠️ Deep link မတွေ့ပါ။")
-    else:
-        await update.message.reply_text("💬 /post နဲ့ post တည်ဆောက်နိုင်တယ်။\n/help — အကူအညီ")
+    await update.message.reply_text("💬 /post နဲ့ post တည်ဆောက်နိုင်တယ်။\n/help — အကူအညီ")
 
 # ==================== CALLBACK HANDLER ====================
 
