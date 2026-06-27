@@ -39,13 +39,25 @@ def make_deep_link(short_id):
     return f"https://t.me/{BOT_USERNAME}?start={short_id}"
 
 def clean_filename(name):
+    # Extension ဖြုတ်
     name = re.sub(r'\.(mkv|mp4|avi|mov|wmv|flv|zip|rar)$', '', name, flags=re.IGNORECASE)
-    ep_match = re.search(r'^(.+?S\d+\s*EP?\s*\d+)', name, re.IGNORECASE)
+
+    # Series ဆိုရင် S01EP01 အထိ ယူ
+    ep_match = re.search(r'^(.+?)(S\d+\s*EP?\s*\d+)', name, re.IGNORECASE)
     if ep_match:
-        name = ep_match.group(1)
+        title = ep_match.group(1).replace('.', ' ').strip()
+        episode = ep_match.group(2).upper().replace(' ', '')
+        return f"{title} {episode} ရယူရန်"
+
+    # Movie ဆိုရင် quality tag တွေဖြုတ်ပြီး ရှေ့ title ပဲယူ
+    name = re.sub(r'\.(NF|WEB|WEBRip|WEB-DL|BluRay|HDTV|DVDRip|AMZN|DSNP|HULU|1080p|720p|480p|INTERNAL|REPACK|PROPER).*$', '', name, flags=re.IGNORECASE)
+    # ခုနှစ် (2024) အပါ ယူ
+    year_match = re.search(r'^(.+?\d{4})', name)
+    if year_match:
+        title = year_match.group(1).replace('.', ' ').strip()
     else:
-        name = re.sub(r'\.(NF|WEB|WEBRip|WEB-DL|BluRay|HDTV|DVDRip|AMZN|DSNP|HULU|1080p|720p|480p).*$', '', name, flags=re.IGNORECASE)
-    return name.replace('.', ' ').strip()
+        title = name.replace('.', ' ').strip()
+    return f"{title} ရယူရန်"
 
 def parse_deep_link_msg(text):
     url_match = re.search(r'(https://t\.me/\S+)', text)
@@ -56,10 +68,23 @@ def parse_deep_link_msg(text):
     name = clean_filename(after_url) if after_url else "File"
     return {"name": name, "url": url}
 
+def sort_links(links):
+    def sort_key(link):
+        name = link["name"]
+        m = re.search(r'S(\d+)\s*EP?(\d+)', name, re.IGNORECASE)
+        if m:
+            return (int(m.group(1)), int(m.group(2)))
+        m2 = re.search(r'EP?(\d+)', name, re.IGNORECASE)
+        if m2:
+            return (0, int(m2.group(1)))
+        return (999, name)
+    return sorted(links, key=sort_key)
+
 def build_keyboard(links):
+    sorted_links = sort_links(links)
     keyboard = []
     row = []
-    for link in links:
+    for link in sorted_links:
         row.append(InlineKeyboardButton(link["name"], url=link["url"]))
         if len(row) == 2:
             keyboard.append(row)
