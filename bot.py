@@ -68,6 +68,12 @@ async def run_bot():
         allow_reentry=True,
     )
 
+    # ဖိုင် handler ကို အရင်ဆုံး (conversation ပြင်မှာ အမြဲ အလုပ်လုပ်အောင်)
+    application.add_handler(MessageHandler(
+        filters.Document.ALL | filters.VIDEO | filters.AUDIO,
+        handle_file
+    ))
+
     application.add_handler(post_conv)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
@@ -76,10 +82,7 @@ async def run_bot():
     application.add_handler(CommandHandler("reset", reset_script))
     application.add_handler(CommandHandler("cancel", cancel))
     application.add_handler(CallbackQueryHandler(callback_handler))
-    application.add_handler(MessageHandler(
-        filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.PHOTO,
-        handle_file
-    ))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_file))
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         process_user_message
