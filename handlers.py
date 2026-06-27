@@ -1,6 +1,7 @@
 import os
-import logging
 import re
+import logging
+import hashlib
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
@@ -23,15 +24,19 @@ for _id in os.environ.get("ADMIN_ID", "").split(","):
 
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "").strip().lstrip("@")
 
-# In-memory storage
-session = {}        # {user_id: {photo, caption, links[]}}
-pending_files = {}  # {user_id: [{file_id, name}]}
+# Storage
+session = {}       # {user_id: {photo, caption, links[]}}
+pending_files = {} # {user_id: [{short_id, name}]}
+file_store = {}    # {short_id: {file_id, file_type}}
 
 def is_admin(user_id):
     return user_id in ADMIN_IDS
 
-def make_deep_link(file_id):
-    return f"https://t.me/{BOT_USERNAME}?start={file_id}"
+def make_short_id(file_id):
+    return hashlib.md5(file_id.encode()).hexdigest()[:12]
+
+def make_deep_link(short_id):
+    return f"https://t.me/{BOT_USERNAME}?start={short_id}"
 
 def clean_filename(name):
     name = re.sub(r'\.(mkv|mp4|avi|mov|wmv|flv|zip|rar)$', '', name, flags=re.IGNORECASE)
@@ -73,15 +78,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user_id = update.effective_user.id
 
+    # Deep link နှိပ်ပြီး ဝင်လာတာ — ဖိုင်ပို့ပေး
     if context.args:
-        file_id = context.args[0]
-        try:
-            await context.bot.send_document(chat_id=update.effective_chat.id, document=file_id)
-        except Exception:
+        short_id = context.args[0]
+        stored = file_store.get(short_id)
+        if stored:
             try:
-                await context.bot.send_video(chat_id=update.effective_chat.id, video=file_id)
-            except Exception:
-                await update.message.reply_text(f"🔗 `{file_id}`", parse_mode="Markdown")
+                if stored["file_type"] == "video":
+                    await context.bot.send_video(chat_id=update.effective_chat.id, video=stored["file_id"])
+                elif stored["file_type"] == "audio":
+                    await context.bot.send_audio(chat_id=update.effective_chat.id, audio=stored["file_id"])
+                else:
+                    await context.bot.send_document(chat_id=update.effective_chat.id, document=stored["file_id"])
+            except Exception as e:
+                logger.error(f"File send error: {e}")
+                await update.message.reply_text("⚠️ ဖိုင် ပြန်ပို့တာ မအောင်မြင်ပါ။")
+        else:
+            await update.message.reply_text("⚠️ ဖိုင် မတွေ့ပါ။ Bot restart ဖြစ်သွားလို့ ဖြစ်နိုင်တယ်။")
         return
 
     if is_admin(user_id):
@@ -135,16 +148,13 @@ async def post_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not update.effective_user:
         return POST_WAITING_PHOTO
     user_id = update.effective_user.id
-
     if not update.message.photo:
         await update.message.reply_text("❌ ပုံပဲ ပို့ပါ။")
         return POST_WAITING_PHOTO
-
     session[user_id]["photo"] = update.message.photo[-1].file_id
     await update.message.reply_text(
         "📝 *ဇာတ်ညွှန်း ပို့ပါ*\n\n"
-        "တစ်ကြိမ် ဒါမှမဟုတ် ကြိမ်ထပ် ပို့နိုင်တယ်။\n"
-        "ပြီးရင် /captdone ရိုက်ပါ။",
+        "ကြိမ်ထပ် ပို့နိုင်တယ်။ ပြီးရင် /captdone ရိုက်ပါ။",
         parse_mode="Markdown"
     )
     return POST_WAITING_CAPTION
@@ -159,8 +169,7 @@ async def post_receive_caption(update: Update, context: ContextTypes.DEFAULT_TYP
         preview = caption if caption else "(ဇာတ်ညွှန်း မထည့်ထားပါ)"
         keyboard = [[InlineKeyboardButton("✅  a  — အတည်ပြု", callback_data="post_confirm_caption")]]
         await update.message.reply_text(
-            f"📋 *ဇာတ်ညွှန်း Preview:*\n\n{preview}\n\n"
-            "'a' နှိပ်ပြီး အတည်ပြုပါ။",
+            f"📋 *ဇာတ်ညွှန်း Preview:*\n\n{preview}\n\n'a' နှိပ်ပြီး အတည်ပြုပါ။",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
@@ -171,9 +180,7 @@ async def post_receive_caption(update: Update, context: ContextTypes.DEFAULT_TYP
         session[user_id]["caption"] += "\n" + text
     else:
         session[user_id]["caption"] = text
-    await update.message.reply_text(
-        "✅ ထည့်ပြီး။ ဆက်ပို့နိုင်တယ် ဒါမှမဟုတ် /captdone ရိုက်ပါ။"
-    )
+    await update.message.reply_text("✅ ထည့်ပြီး။ ဆက်ပို့နိုင်တယ် ဒါမှမဟုတ် /captdone ရိုက်ပါ။")
     return POST_WAITING_CAPTION
 
 async def post_receive_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -181,41 +188,33 @@ async def post_receive_links(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return POST_WAITING_LINKS
     user_id = update.effective_user.id
 
-    # "a" button နှိပ်တာ confirm
     if update.callback_query:
         await update.callback_query.answer()
         await update.callback_query.message.reply_text(
             "✅ ဇာတ်ညွှန်း အတည်ပြုပြီ။\n\n"
-            "🔗 Deep link တွေ ပို့ပါ။\n"
-            "ပြီးရင် /done ရိုက်ပြီး post ထုတ်ပါ။"
+            "🔗 Deep link တွေ ပို့ပါ။ ပြီးရင် /done ရိုက်ပါ။"
         )
         return POST_WAITING_LINKS
 
-    # /done
     if update.message and update.message.text and update.message.text.startswith("/done"):
         links = session.get(user_id, {}).get("links", [])
         if not links:
             await update.message.reply_text("⚠️ Link တစ်ခုမှ မရှိသေးပါ။ Deep link ပို့ပါ။")
             return POST_WAITING_LINKS
-
         photo = session[user_id]["photo"]
         caption = session[user_id]["caption"].strip()
         keyboard = build_keyboard(links)
-
         await update.message.reply_photo(
             photo=photo,
             caption=caption if caption else None,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         await update.message.reply_text(
-            f"✅ Post တည်ဆောက်ပြီး!\n"
-            f"🔘 Button {len(links)} ခု ပါတယ်။\n\n"
-            "/post — Post အသစ်\n/reset — Reset"
+            f"✅ Post တည်ဆောက်ပြီး! Button {len(links)} ခု ပါတယ်။\n\n/post — Post အသစ်"
         )
         session.pop(user_id, None)
         return ConversationHandler.END
 
-    # Deep link message
     if update.message:
         text = update.message.text or ""
         if "t.me/" in text:
@@ -224,20 +223,17 @@ async def post_receive_links(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 session[user_id]["links"].append(parsed)
                 count = len(session[user_id]["links"])
                 await update.message.reply_text(
-                    f"✅ [{count}] *{parsed['name']}*\n"
-                    f"🔗 {parsed['url']}\n\n"
+                    f"✅ [{count}] *{parsed['name']}*\n{parsed['url']}\n\n"
                     "ထပ်ပို့နိုင်တယ် ဒါမှမဟုတ် /done ရိုက်ပါ။",
                     parse_mode="Markdown"
                 )
             else:
                 await update.message.reply_text("⚠️ Deep link မတွေ့ပါ။")
         else:
-            await update.message.reply_text(
-                "💬 Deep link ပို့ပါ ဒါမှမဟုတ် /done ရိုက်ပါ။"
-            )
+            await update.message.reply_text("💬 Deep link ပို့ပါ ဒါမှမဟုတ် /done ရိုက်ပါ။")
     return POST_WAITING_LINKS
 
-# ==================== FILE HANDLER (deep link ထုတ်) ====================
+# ==================== FILE HANDLER ====================
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user:
@@ -246,45 +242,44 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(user_id):
         return
 
-    # Photo ဆိုရင် post flow စစ်
     if update.message.photo:
-        s = session.get(user_id, {})
-        if s.get("photo") is None and "links" in s:
-            # post flow ထဲမှာ မဟုတ်ဘူး
-            pass
-        await update.message.reply_text(
-            "ℹ️ ပုံ ရရှိပြီ။ Post တည်ဆောက်ဖို့ /post ရိုက်ပါ။"
-        )
+        await update.message.reply_text("ℹ️ ပုံ ရရှိပြီ။ Post တည်ဆောက်ဖို့ /post ရိုက်ပါ။")
         return
 
     file_id = None
     file_name = "file"
+    file_type = "document"
 
     if update.message.document:
         file_id = update.message.document.file_id
         file_name = update.message.document.file_name or "file"
+        file_type = "document"
     elif update.message.video:
         file_id = update.message.video.file_id
         file_name = update.message.video.file_name or "video.mp4"
+        file_type = "video"
     elif update.message.audio:
         file_id = update.message.audio.file_id
         file_name = update.message.audio.file_name or "audio"
+        file_type = "audio"
     else:
         await update.message.reply_text("📎 ဖိုင် မသိပါ။")
         return
 
-    deep_link = make_deep_link(file_id)
+    # short_id ဆောက်ပြီး file_store မှာ သိမ်း
+    short_id = make_short_id(file_id)
+    file_store[short_id] = {"file_id": file_id, "file_type": file_type}
+
+    deep_link = make_deep_link(short_id)
     button_name = clean_filename(file_name)
 
-    # file_id ကို pending_files မှာ သိမ်း၊ button data မှာ index ပဲသုံး (64 byte limit ကျော်မအောင်)
+    # pending_files မှာ index နဲ့ သိမ်း
     if user_id not in pending_files:
         pending_files[user_id] = []
-    pending_files[user_id].append({"file_id": file_id, "name": button_name})
+    pending_files[user_id].append({"short_id": short_id, "name": button_name})
     idx = len(pending_files[user_id]) - 1
 
-    keyboard = [[
-        InlineKeyboardButton("➕ Post ထဲ ထည့်", callback_data=f"add|{idx}")
-    ]]
+    keyboard = [[InlineKeyboardButton("➕ Post ထဲ ထည့်", callback_data=f"add|{idx}")]]
 
     await update.message.reply_text(
         f"✅ *Deep Link ထွက်ပြီ!*\n\n"
@@ -315,7 +310,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/post — Post အသစ်\n"
             "/view — Links ကြည့်\n"
             "/delete — Link ဖျက်\n"
-            "/reset — အားလုံး reset\n"
+            "/reset — Reset\n"
             "/cancel — ပယ်ဖျက်",
             parse_mode="Markdown"
         )
@@ -352,10 +347,7 @@ async def delete_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for i, l in enumerate(links)
     ]
     keyboard.append([InlineKeyboardButton("❌ မဖျက်တော့ဘူး", callback_data="cancel_delete")])
-    await update.message.reply_text(
-        "ဘယ်ဟာ ဖျက်မလဲ?",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await update.message.reply_text("ဘယ်ဟာ ဖျက်မလဲ?", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pass
@@ -411,15 +403,13 @@ async def process_user_message(update: Update, context: ContextTypes.DEFAULT_TYP
             session[user_id]["links"].append(parsed)
             count = len(session[user_id]["links"])
             await update.message.reply_text(
-                f"✅ [{count}] *{parsed['name']}*\n🔗 {parsed['url']}",
+                f"✅ [{count}] *{parsed['name']}*\n{parsed['url']}",
                 parse_mode="Markdown"
             )
         else:
             await update.message.reply_text("⚠️ Deep link မတွေ့ပါ။")
     else:
-        await update.message.reply_text(
-            "💬 /post နဲ့ post တည်ဆောက်နိုင်တယ်။\n/help — အကူအညီ"
-        )
+        await update.message.reply_text("💬 /post နဲ့ post တည်ဆောက်နိုင်တယ်။\n/help — အကူအညီ")
 
 # ==================== CALLBACK HANDLER ====================
 
@@ -432,8 +422,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
 
     if data == "menu_post":
-        # conversation entry point က handle လုပ်မယ်
-        pass
+        pass  # conversation entry point က handle လုပ်မယ်
 
     elif data == "menu_view":
         links = session.get(user_id, {}).get("links", [])
@@ -455,10 +444,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for i, l in enumerate(links)
             ]
             keyboard.append([InlineKeyboardButton("❌ မဖျက်တော့ဘူး", callback_data="cancel_delete")])
-            await query.message.reply_text(
-                "ဘယ်ဟာ ဖျက်မလဲ?",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
+            await query.message.reply_text("ဘယ်ဟာ ဖျက်မလဲ?", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "menu_reset":
         session.pop(user_id, None)
@@ -470,15 +456,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             files = pending_files.get(user_id, [])
             if 0 <= idx < len(files):
                 f = files[idx]
-                deep_link = make_deep_link(f["file_id"])
+                deep_link = make_deep_link(f["short_id"])
                 if user_id not in session:
                     init_session(user_id)
                 session[user_id]["links"].append({"name": f["name"], "url": deep_link})
                 count = len(session[user_id]["links"])
                 await query.edit_message_text(
                     f"✅ [{count}] *{f['name']}* ထည့်ပြီ။\n\n"
-                    "/post — Post တည်ဆောက်\n"
-                    "/view — Links ကြည့်",
+                    "/post — Post တည်ဆောက်\n/view — Links ကြည့်",
                     parse_mode="Markdown"
                 )
         except (ValueError, IndexError):
