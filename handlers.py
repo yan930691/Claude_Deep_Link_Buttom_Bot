@@ -42,11 +42,13 @@ def make_deep_link(short_id):
 
 def clean_filename(name):
     name = re.sub(r'\.(mkv|mp4|avi|mov|wmv|flv|zip|rar)$', '', name, flags=re.IGNORECASE)
-    ep_match = re.search(r'^(.+?)(S\d+\s*EP?\s*\d+)', name, re.IGNORECASE)
+    # Series — S01EP19 → "S1 EP19 ရယူရန်"
+    ep_match = re.search(r'S(\d+)\s*EP?(\d+)', name, re.IGNORECASE)
     if ep_match:
-        title = ep_match.group(1).replace('.', ' ').strip()
-        episode = ep_match.group(2).upper().replace(' ', '')
-        return f"{title} {episode} ရယူရန်"
+        s = int(ep_match.group(1))
+        ep = int(ep_match.group(2))
+        return f"S{s} EP{ep} ရယူရန်"
+    # Movie — title နဲ့ ခုနှစ်ပဲ ယူ
     name = re.sub(r'\.(NF|WEB|WEBRip|WEB-DL|BluRay|HDTV|DVDRip|AMZN|DSNP|HULU|1080p|720p|480p|INTERNAL|REPACK|PROPER).*$', '', name, flags=re.IGNORECASE)
     year_match = re.search(r'^(.+?\d{4})', name)
     if year_match:
@@ -318,12 +320,12 @@ async def post_receive_files(update: Update, context: ContextTypes.DEFAULT_TYPE)
         file_store[short_id] = {"file_id": file_id, "file_type": file_type, "name": button_name}
         deep_link = make_deep_link(short_id)
 
+        # အလိုအလျောက် session ထဲ ထည့်
         session[user_id]["links"].append({"name": button_name, "url": deep_link})
         count = len(session[user_id]["links"])
 
         await update.message.reply_text(
             f"✅ [{count}] *{button_name}*\n"
-            f"🔗 {deep_link}\n\n"
             "ဖိုင်ထပ်ပို့နိုင်တယ် ဒါမှမဟုတ် /done ရိုက်ပြီး post ထုတ်ပါ။",
             parse_mode="Markdown"
         )
@@ -370,16 +372,12 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in pending_files:
         pending_files[user_id] = []
     pending_files[user_id].append({"short_id": short_id, "name": button_name})
-    idx = len(pending_files[user_id]) - 1
-
-    keyboard = [[InlineKeyboardButton("➕ Post ထဲ ထည့်", callback_data=f"add|{idx}")]]
 
     await update.message.reply_text(
         f"✅ *Deep Link ထွက်ပြီ!*\n\n"
         f"📁 `{file_name}`\n"
         f"🔘 {button_name}\n\n"
         f"🔗 သင်၏ Deep Link အဆင်သင့်ဖြစ်ပါပြီ။ {deep_link} {file_name}",
-        reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
 
