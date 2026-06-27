@@ -24,7 +24,8 @@ for _id in os.environ.get("ADMIN_ID", "").split(","):
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "").strip().lstrip("@")
 
 # In-memory storage
-session = {}  # {user_id: {photo, caption, links[]}}
+session = {}        # {user_id: {photo, caption, links[]}}
+pending_files = {}  # {user_id: [{file_id, name}]}
 
 def is_admin(user_id):
     return user_id in ADMIN_IDS
@@ -275,11 +276,14 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     deep_link = make_deep_link(file_id)
     button_name = clean_filename(file_name)
 
+    # file_id ကို pending_files မှာ သိမ်း၊ button data မှာ index ပဲသုံး (64 byte limit ကျော်မအောင်)
+    if user_id not in pending_files:
+        pending_files[user_id] = []
+    pending_files[user_id].append({"file_id": file_id, "name": button_name})
+    idx = len(pending_files[user_id]) - 1
+
     keyboard = [[
-        InlineKeyboardButton(
-            "➕ Post ထဲ ထည့်",
-            callback_data=f"addlink|{file_id}|{button_name[:40]}"
-        )
+        InlineKeyboardButton("➕ Post ထဲ ထည့်", callback_data=f"add|{idx}")
     ]]
 
     await update.message.reply_text(
@@ -460,22 +464,25 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session.pop(user_id, None)
         await query.edit_message_text("🔄 Reset ပြီး။ /post နဲ့ အသစ်စတင်နိုင်ပါပြီ။")
 
-    elif data.startswith("addlink|"):
-        parts = data.split("|", 2)
-        if len(parts) == 3:
-            file_id = parts[1]
-            btn_name = parts[2]
-            deep_link = make_deep_link(file_id)
-            if user_id not in session:
-                init_session(user_id)
-            session[user_id]["links"].append({"name": btn_name, "url": deep_link})
-            count = len(session[user_id]["links"])
-            await query.edit_message_text(
-                f"✅ [{count}] *{btn_name}* ထည့်ပြီ။\n\n"
-                "/post — Post တည်ဆောက်\n"
-                "/view — Links ကြည့်",
-                parse_mode="Markdown"
-            )
+    elif data.startswith("add|"):
+        try:
+            idx = int(data.split("|")[1])
+            files = pending_files.get(user_id, [])
+            if 0 <= idx < len(files):
+                f = files[idx]
+                deep_link = make_deep_link(f["file_id"])
+                if user_id not in session:
+                    init_session(user_id)
+                session[user_id]["links"].append({"name": f["name"], "url": deep_link})
+                count = len(session[user_id]["links"])
+                await query.edit_message_text(
+                    f"✅ [{count}] *{f['name']}* ထည့်ပြီ။\n\n"
+                    "/post — Post တည်ဆောက်\n"
+                    "/view — Links ကြည့်",
+                    parse_mode="Markdown"
+                )
+        except (ValueError, IndexError):
+            pass
 
     elif data.startswith("del|"):
         try:
