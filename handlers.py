@@ -58,7 +58,7 @@ def clean_filename(name):
     if ep_match:
         s = int(ep_match.group(1))
         ep = int(ep_match.group(2))
-        return f"S{s} EP{ep} ရယူရန်"
+        return f"Season {s} EP {ep} ရယူရန်"
     name = re.sub(r'\.(NF|WEB|WEBRip|WEB-DL|BluRay|HDTV|DVDRip|AMZN|DSNP|HULU|1080p|720p|480p|INTERNAL|REPACK|PROPER).*$', '', name, flags=re.IGNORECASE)
     year_match = re.search(r'^(.+?\d{4})', name)
     if year_match:
@@ -129,13 +129,45 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stored = file_store.get(short_id)
         if stored:
             caption = stored.get("name", "")
+            sent_msg = None
+            warning_msg = None
             try:
                 if stored["file_type"] == "video":
-                    await context.bot.send_video(chat_id=update.effective_chat.id, video=stored["file_id"], caption=caption)
+                    sent_msg = await context.bot.send_video(chat_id=update.effective_chat.id, video=stored["file_id"], caption=caption)
                 elif stored["file_type"] == "audio":
-                    await context.bot.send_audio(chat_id=update.effective_chat.id, audio=stored["file_id"], caption=caption)
+                    sent_msg = await context.bot.send_audio(chat_id=update.effective_chat.id, audio=stored["file_id"], caption=caption)
                 else:
-                    await context.bot.send_document(chat_id=update.effective_chat.id, document=stored["file_id"], caption=caption)
+                    sent_msg = await context.bot.send_document(chat_id=update.effective_chat.id, document=stored["file_id"], caption=caption)
+
+                warning_msg = await update.message.reply_text(
+                    "⚠️ ⚠️ ⚠️ အရေးကြီးပါတယ် ⚠️ ⚠️ ⚠️\n\n"
+                    "ဤရုပ်ရှင်ဖိုင်များ/ဗီဒီယိုများကို 5 မိနစ်အတွင်း (မူပိုင်ခွင့်ပြဿနာများကြောင့်) ဖျက်ပါမည်။\n"
+                    "ကျေးဇူးပြု၍ ဤဖိုင်များ/ဗီဒီယိုများအားလုံးကို သင်၏ Saved Messages များသို Forward လုပ်ပြီး "
+                    "ထိုနေရာတွင် ဇာတ်ကားအား ကြည့်ရှုပါ။\n\n"
+                    "ကျွန်ုပ်၏ Channel ကို လာရောက်အားပေးမှုအတွက် ကျေးဇူးအထူးတင်ပါတယ် 🙏🙏🙏\n\n"
+                    "Channel ရေရှည်တည်တံ့ဖိုအတွက် Support ပေးချင်ပါက Wave Pay (09767011991) ကို ကူညီနိုင်ပါတယ်။\n"
+                    "အားလုံးကို ကျေးဇူးတင်ပါတယ်။\n\n"
+                    "!!! IMPORTANT !!!\n"
+                    "This Movie Files/Videos will be deleted in 5 mins (Due to Copyright Issues).\n"
+                    "Please forward these ALL Files/Videos to your Saved Messages and start downloading there."
+                )
+
+                # 5 မိနစ်အတွင်း auto delete
+                async def delete_after_5min():
+                    import asyncio
+                    await asyncio.sleep(300)
+                    try:
+                        await sent_msg.delete()
+                    except Exception:
+                        pass
+                    try:
+                        await warning_msg.delete()
+                    except Exception:
+                        pass
+
+                import asyncio
+                asyncio.create_task(delete_after_5min())
+
             except Exception as e:
                 logger.error(f"File send error: {e}")
                 await update.message.reply_text("⚠️ ဖိုင် ပြန်ပို့တာ မအောင်မြင်ပါ။")
