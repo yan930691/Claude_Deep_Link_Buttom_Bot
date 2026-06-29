@@ -54,7 +54,8 @@ def get_movie_name(name):
 def clean_filename(name):
     """Button name အတွက် — တိုတို"""
     name = re.sub(r'\.(mkv|mp4|avi|mov|wmv|flv|zip|rar)$', '', name, flags=re.IGNORECASE)
-    ep_match = re.search(r'S(\d+)\s*EP?(\d+)', name, re.IGNORECASE)
+    # [S2] EP1 or S2EP1 or S02E01 format အားလုံး handle
+    ep_match = re.search(r'\[?S(\d+)\]?\s*[-.]?\s*\[?EP?(\d+)\]?', name, re.IGNORECASE)
     if ep_match:
         s = int(ep_match.group(1))
         ep = int(ep_match.group(2))
@@ -70,10 +71,10 @@ def clean_filename(name):
 def sort_links(links):
     def sort_key(link):
         name = link["name"]
-        m = re.search(r'S(\d+)\s*EP?(\d+)', name, re.IGNORECASE)
+        m = re.search(r'Season\s*(\d+)\s*EP\s*(\d+)', name, re.IGNORECASE)
         if m:
             return (int(m.group(1)), int(m.group(2)))
-        m2 = re.search(r'EP?(\d+)', name, re.IGNORECASE)
+        m2 = re.search(r'EP\s*(\d+)', name, re.IGNORECASE)
         if m2:
             return (0, int(m2.group(1)))
         return (999, name)
