@@ -100,6 +100,7 @@ def init_session(user_id):
 
 async def create_telegraph_page(title, content):
     if not TELEGRAPH_TOKEN:
+        logger.error("TELEGRAPH_TOKEN မရှိပါ")
         return None
     try:
         async with httpx.AsyncClient() as client:
@@ -110,13 +111,17 @@ async def create_telegraph_page(title, content):
                     "title": title,
                     "content": [{"tag": "p", "children": [content]}],
                     "return_content": False
-                }
+                },
+                timeout=10
             )
             data = resp.json()
+            logger.info(f"Telegraph response: {data}")
             if data.get("ok"):
                 return data["result"]["url"]
+            else:
+                logger.error(f"Telegraph error: {data}")
     except Exception as e:
-        logger.error(f"Telegraph error: {e}")
+        logger.error(f"Telegraph exception: {e}")
     return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
