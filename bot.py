@@ -54,7 +54,7 @@ async def run_bot():
             ],
             POST_WAITING_CAPTION: [
                 CommandHandler("captdone", post_receive_caption),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, post_receive_caption),
+                MessageHandler(filters.TEXT, post_receive_caption),
             ],
             POST_WAITING_CONFIRM: [
                 CallbackQueryHandler(post_confirm_and_wait_files, pattern="^post_confirm_caption$"),
