@@ -233,7 +233,9 @@ async def post_receive_caption(update: Update, context: ContextTypes.DEFAULT_TYP
     if not update.effective_user:
         return POST_WAITING_CAPTION
     user_id = update.effective_user.id
-    if update.message.text and update.message.text.startswith("/captdone"):
+    text = update.message.text or ""
+
+    if text.strip().startswith("/captdone") or text.strip() == "captdone":
         caption = session[user_id].get("caption", "").strip()
         preview = caption if caption else "(ဇာတ်ညွှန်း မထည့်ထားပါ)"
         preview_show = preview[:500] + "..." if len(preview) > 500 else preview
@@ -244,7 +246,7 @@ async def post_receive_caption(update: Update, context: ContextTypes.DEFAULT_TYP
             parse_mode="Markdown"
         )
         return POST_WAITING_CONFIRM
-    text = update.message.text or ""
+
     if session[user_id]["caption"]:
         session[user_id]["caption"] += "\n" + text
     else:
