@@ -51,15 +51,40 @@ def get_movie_name(name):
         return year_match.group(1).replace('.', ' ').strip()
     return name.replace('.', ' ').strip()
 
+def mm_to_num(s):
+    """မြန်မာဂဏန်း → Arabic number"""
+    mm_digits = '၀၁၂၃၄၅၆၇၈၉'
+    return ''.join(str(mm_digits.index(c)) if c in mm_digits else c for c in s)
+
 def clean_filename(name):
     """Button name အတွက် — တိုတို"""
     name = re.sub(r'\.(mkv|mp4|avi|mov|wmv|flv|zip|rar)$', '', name, flags=re.IGNORECASE)
-    # [S2] EP1 or S2EP1 or S02E01 format အားလုံး handle
-    ep_match = re.search(r'\[?S(\d+)\]?\s*[-.]?\s*\[?EP?(\d+)\]?', name, re.IGNORECASE)
-    if ep_match:
-        s = int(ep_match.group(1))
-        ep = int(ep_match.group(2))
+
+    # S01E08 format
+    se_match = re.search(r'S(\d+)E(\d+)', name, re.IGNORECASE)
+    if se_match:
+        return f"Season {int(se_match.group(1))} EP {int(se_match.group(2))} ရယူရန်"
+
+    # Season number (English + Myanmar)
+    s_match = re.search(
+        r'(?:Season|ဇာတ်လမ်းတွဲ|စီးရီး|S)\s*[\[]?(\d+|[၀-၉]+)[\]]?',
+        name, re.IGNORECASE
+    )
+    # Episode number (English + Myanmar)
+    ep_match = re.search(
+        r'(?:Episode|Ep|အပိုင်း|ကဏ္ဍ)\s*[\[]?(\d+|[၀-၉]+)[\]]?',
+        name, re.IGNORECASE
+    )
+
+    if s_match and ep_match:
+        s = int(mm_to_num(s_match.group(1)))
+        ep = int(mm_to_num(ep_match.group(1)))
         return f"Season {s} EP {ep} ရယူရန်"
+    if s_match:
+        s = int(mm_to_num(s_match.group(1)))
+        return f"Season {s} ရယူရန်"
+
+    # Movie
     name = re.sub(r'\.(NF|WEB|WEBRip|WEB-DL|BluRay|HDTV|DVDRip|AMZN|DSNP|HULU|1080p|720p|480p|INTERNAL|REPACK|PROPER).*$', '', name, flags=re.IGNORECASE)
     year_match = re.search(r'^(.+?\d{4})', name)
     if year_match:
