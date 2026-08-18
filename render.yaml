@@ -1,0 +1,30 @@
+services:
+  - type: worker
+    name: telegram-channel-search-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: API_ID
+        sync: false
+      - key: API_HASH
+        sync: false
+      - key: TELETHON_SESSION
+        sync: false
+      - key: CHANNEL_ID
+        sync: false
+      - key: CACHE_FILE
+        value: /var/data/channel_posts.json
+      - key: REFRESH_INTERVAL_SECONDS
+        value: "900"
+      - key: MAX_RESULTS
+        value: "10"
+      - key: MIN_QUERY_LENGTH
+        value: "2"
+    # Attach a Render persistent disk if you want the JSON cache to survive deploys.
+    # disks:
+    #   - name: telegram-cache
+    #     mountPath: /var/data
+    #     sizeGB: 1
